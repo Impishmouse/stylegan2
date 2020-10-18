@@ -1,5 +1,6 @@
 # from https://github.com/rolux
 
+import argparse
 import os
 import sys
 import bz2
@@ -23,11 +24,20 @@ if __name__ == "__main__":
     Extracts and aligns all faces from images using DLib and a function from original FFHQ dataset preparation step
     python align_images.py /raw_images /aligned_images
     """
+    parser = argparse.ArgumentParser(description='Align image with face correctly')
+    parser.add_argument('src_dir', help='Directory with raw images')
+    parser.add_argument('dst_dir', help='Output directory')
+    parser.add_argument('--model_dir', default=LANDMARKS_MODEL_URL,
+                        help='Link to preTrained model')
+
+    print('Loading networks from "%s"...' % args.model_dir)
+
+    RAW_IMAGES_DIR = args.src_dir
+    ALIGNED_IMAGES_DIR = args.dst_dir
+    MODEL_URL = args.model_dir
 
     landmarks_model_path = unpack_bz2(get_file('shape_predictor_68_face_landmarks.dat.bz2',
-                                               LANDMARKS_MODEL_URL, cache_subdir='temp'))
-    RAW_IMAGES_DIR = sys.argv[1]
-    ALIGNED_IMAGES_DIR = sys.argv[2]
+                                               MODEL_URL, cache_subdir='temp'))
 
     landmarks_detector = LandmarksDetector(landmarks_model_path)
     for img_name in [x for x in os.listdir(RAW_IMAGES_DIR) if x[0] not in '._']:
