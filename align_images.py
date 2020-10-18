@@ -29,7 +29,7 @@ if __name__ == "__main__":
     parser.add_argument('dst_dir', help='Output directory')
     parser.add_argument('--model_dir', default=LANDMARKS_MODEL_URL,
                         help='Link to preTrained model')
-
+    args = parser.parse_args()
     print('Loading networks from "%s"...' % args.model_dir)
 
     RAW_IMAGES_DIR = args.src_dir
