@@ -36,8 +36,7 @@ if __name__ == "__main__":
     ALIGNED_IMAGES_DIR = args.dst_dir
     MODEL_URL = args.model_dir
 
-    landmarks_model_path = unpack_bz2(get_file('shape_predictor_68_face_landmarks.dat.bz2',
-                                               MODEL_URL, cache_subdir='temp'))
+    landmarks_model_path = unpack_bz2(MODEL_URL)
 
     landmarks_detector = LandmarksDetector(landmarks_model_path)
     for img_name in [x for x in os.listdir(RAW_IMAGES_DIR) if x[0] not in '._']:
