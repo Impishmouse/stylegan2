@@ -14,24 +14,16 @@ from training import misc
 #----------------------------------------------------------------------------
 
 class Projector:
-    def __init__(self,
-        vgg16_pkl                       = 'https://drive.google.com/uc?id=1N2-m9qszOeVC9Tq77WxsLnuWwOedQiD2',
-        num_steps                       = 1000,
-        initial_learning_rate           = 0.1,
-        initial_noise_factor            = 0.05,
-        verbose                         = False
-    ):
-
-        self.vgg16_pkl                  = vgg16_pkl
-        self.num_steps                  = num_steps
-        self.dlatent_avg_samples        = 10000
-        self.initial_learning_rate      = initial_learning_rate
-        self.initial_noise_factor       = initial_noise_factor
+    def __init__(self):
+        self.num_steps                  = 1000
+        self.dlatent_avg_samples        = 100
+        self.initial_learning_rate      = 0.1
+        self.initial_noise_factor       = 0.05
         self.lr_rampdown_length         = 0.25
         self.lr_rampup_length           = 0.05
         self.noise_ramp_length          = 0.75
         self.regularize_noise_weight    = 1e5
-        self.verbose                    = verbose
+        self.verbose                    = True
         self.clone_net                  = True
 
         self._Gs                    = None
@@ -56,8 +48,7 @@ class Projector:
         self._cur_step              = None
 
     def _info(self, *args):
-        if self.verbose:
-            print('Projector:', *args)
+        print('Projector:', *args)
 
     def set_network(self, Gs, minibatch_size=1):
         assert minibatch_size == 1
@@ -70,9 +61,9 @@ class Projector:
 
         # Find dlatent stats.
         self._info('Finding W midpoint and stddev using %d samples...' % self.dlatent_avg_samples)
-        latent_samples = np.random.RandomState(123).randn(self.dlatent_avg_samples, *self._Gs.input_shapes[0][1:])
-        dlatent_samples = self._Gs.components.mapping.run(latent_samples, None) # [N, 18, 512]
-        self._dlatent_avg = np.mean(dlatent_samples, axis=0, keepdims=True) # [1, 18, 512]
+        latent_samples = np.random.RandomState(1112).randn(self.dlatent_avg_samples, *self._Gs.input_shapes[0][1:])
+        dlatent_samples = self._Gs.components.mapping.run(latent_samples, None)[:, :1, :] # [N, 1, 512]
+        self._dlatent_avg = np.mean(dlatent_samples, axis=0, keepdims=True) # [1, 1, 512]
         self._dlatent_std = (np.sum((dlatent_samples - self._dlatent_avg) ** 2) / self.dlatent_avg_samples) ** 0.5
         self._info('std = %g' % self._dlatent_std)
 
@@ -100,7 +91,7 @@ class Projector:
         self._dlatents_var = tf.Variable(tf.zeros([self._minibatch_size] + list(self._dlatent_avg.shape[1:])), name='dlatents_var')
         self._noise_in = tf.placeholder(tf.float32, [], name='noise_in')
         dlatents_noise = tf.random.normal(shape=self._dlatents_var.shape) * self._noise_in
-        self._dlatents_expr = self._dlatents_var + dlatents_noise
+        self._dlatents_expr = tf.tile(self._dlatents_var + dlatents_noise, [1, self._Gs.components.synthesis.input_shape[1], 1])
         self._images_expr = self._Gs.components.synthesis.get_output_for(self._dlatents_expr, randomize_noise=False)
 
         # Downsample image to 256x256 if it's larger than that. VGG was built for 224x224 images.
@@ -114,7 +105,7 @@ class Projector:
         self._info('Building loss graph...')
         self._target_images_var = tf.Variable(tf.zeros(proc_images_expr.shape), name='target_images_var')
         if self._lpips is None:
-            self._lpips = misc.load_pkl(self.vgg16_pkl) # vgg16_zhang_perceptual.pkl
+            self._lpips = misc.load_pkl('./pkl/vgg16_zhang_perceptual.pkl') # vgg16_zhang_perceptual.pkl
         self._dist = self._lpips.get_output_for(proc_images_expr, self._target_images_var)
         self._loss = tf.reduce_sum(self._dist)
 

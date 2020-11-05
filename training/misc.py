@@ -9,14 +9,78 @@
 import os
 import pickle
 import numpy as np
+import glob
+import re
 import PIL.Image
 import PIL.ImageFont
 import dnnlib
-import glob
-import re
+
 #----------------------------------------------------------------------------
 # Convenience wrappers for pickle that are able to load data produced by
 # older versions of the code, and from external URLs.
+
+def locate_run_dir(result_dir, run_id_or_run_dir):
+    if isinstance(run_id_or_run_dir, str):
+        if os.path.isdir(run_id_or_run_dir):
+            return run_id_or_run_dir
+        converted = dnnlib.submission.submit.convert_path(run_id_or_run_dir)
+        if os.path.isdir(converted):
+            return converted
+
+    run_dir_pattern = re.compile('^0*%s-' % str(run_id_or_run_dir))
+    for search_dir in ['']:
+        full_search_dir = result_dir if search_dir == '' else os.path.normpath(os.path.join(config.result_dir, search_dir))
+        run_dir = os.path.join(full_search_dir, str(run_id_or_run_dir))
+        if os.path.isdir(run_dir):
+            return run_dir
+        run_dirs = sorted(glob.glob(os.path.join(full_search_dir, '*')))
+        run_dirs = [run_dir for run_dir in run_dirs if run_dir_pattern.match(os.path.basename(run_dir))]
+        run_dirs = [run_dir for run_dir in run_dirs if os.path.isdir(run_dir)]
+        if len(run_dirs) == 1:
+            return run_dirs[0]
+    raise IOError('Cannot locate result subdir for run', run_id_or_run_dir)
+
+
+def list_network_pkls(result_dir, run_id_or_run_dir, include_final=True):
+    run_dir = locate_run_dir(result_dir, run_id_or_run_dir)
+    pkls = sorted(glob.glob(os.path.join(run_dir, 'network-*.pkl')))
+    if len(pkls) >= 1 and os.path.basename(pkls[0]) == 'network-final.pkl':
+        if include_final:
+            pkls.append(pkls[0])
+        del pkls[0]
+    return pkls
+
+def locate_latest_pkl(result_dir):
+    allpickles = sorted(glob.glob(os.path.join(result_dir, '0*', 'network-*.pkl')))
+    latest_pickle = allpickles[-1]
+    resume_run_id = os.path.basename(os.path.dirname(latest_pickle))
+    RE_KIMG = re.compile('network-snapshot-(\d+).pkl')
+    kimg = int(RE_KIMG.match(os.path.basename(latest_pickle)).group(1))
+    return (locate_network_pkl(result_dir, resume_run_id), float(kimg))
+
+
+def locate_network_pkl(result_dir, run_id_or_run_dir_or_network_pkl, snapshot_or_network_pkl=None):
+    for candidate in [snapshot_or_network_pkl, run_id_or_run_dir_or_network_pkl]:
+        if isinstance(candidate, str):
+            if os.path.isfile(candidate):
+                return candidate
+            converted = dnnlib.submission.submit.convert_path(candidate)
+            if os.path.isfile(converted):
+                return converted
+
+    pkls = list_network_pkls(result_dir, run_id_or_run_dir_or_network_pkl)
+    if len(pkls) >= 1 and snapshot_or_network_pkl is None:
+        return pkls[-1]
+
+    for pkl in pkls:
+        try:
+            name = os.path.splitext(os.path.basename(pkl))[0]
+            number = int(name.split('-')[-1])
+            if number == snapshot_or_network_pkl:
+                return pkl
+        except ValueError: pass
+        except IndexError: pass
+    raise IOError('Cannot locate network pkl for snapshot', snapshot_or_network_pkl)
 
 def open_file_or_url(file_or_url):
     if dnnlib.util.is_url(file_or_url):
@@ -26,16 +90,6 @@ def open_file_or_url(file_or_url):
 def load_pkl(file_or_url):
     with open_file_or_url(file_or_url) as file:
         return pickle.load(file, encoding='latin1')
-
-def locate_latest_pkl(result_dir):
-    allpickles = sorted(glob.glob(os.path.join(result_dir, '0*', 'network-*.pkl')))
-    if len(allpickles) == 0:
-        return None, 0.0
-    latest_pickle = allpickles[-1]
-    resume_run_id = os.path.basename(os.path.dirname(latest_pickle))
-    RE_KIMG = re.compile('network-snapshot-(\d+).pkl')
-    kimg = int(RE_KIMG.match(os.path.basename(latest_pickle)).group(1))
-    return (latest_pickle, float(kimg))
 
 def save_pkl(obj, filename):
     with open(filename, 'wb') as file:
@@ -88,12 +142,6 @@ def apply_mirror_augment(minibatch):
     mask = np.random.rand(minibatch.shape[0]) < 0.5
     minibatch = np.array(minibatch)
     minibatch[mask] = minibatch[mask, :, :, ::-1]
-    return minibatch
-
-def apply_mirror_augment_v(minibatch):
-    mask = np.random.rand(minibatch.shape[0]) < 0.5
-    minibatch = np.array(minibatch)
-    minibatch[mask] = minibatch[mask, :, ::-1, :]
     return minibatch
 
 #----------------------------------------------------------------------------
